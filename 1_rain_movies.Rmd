@@ -3,6 +3,8 @@ title: "Rain Movies"
 author: "Matthew Ross"
 date: "11/7/2019"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 # Using R to make movies
@@ -22,6 +24,8 @@ library(lubridate)
 library(ggthemes)
 library(tmap)
 library(sf)
+library(gifski)
+library(USAboundariesData)
 theme_set(theme_few()) # Set ggplot theme
 
 
@@ -34,7 +38,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Finding our station names
 
-```{r}
+```{r, include = FALSE}
 #riem_networks() # look for network names
 
 co_stations <- riem_stations(network = 'CO_ASOS')
@@ -47,7 +51,7 @@ stations <- c('AFF', 'FNL')
 
 ## Download station data
 
-```{r}
+```{r, include = FALSE}
 
 af_p <- riem_measures(station='AFF',date_start = '2018-10-01',
                       date_end = '2019-09-30')
@@ -57,13 +61,12 @@ fc <- riem_measures(station='FNL',date_start = '2018-10-01',
                       date_end = '2019-09-30')
 
 View(fc)
-
 ```
 
 
 ## Convert both to daily
 
-```{r}
+```{r, include = FALSE}
 
 daily_p <- fc %>% 
   bind_rows(af_p) %>%
@@ -83,7 +86,7 @@ daily_p <- fc %>%
 
 ## Boring first video
 
-```{r}
+```{r, eval=FALSE}
 
 slice_p <- daily_p %>%
   slice(1:20)
@@ -102,26 +105,21 @@ animate(p1, nframes=nrow(slice_p))
 
 ## Leaving a trace
 
-```{r}
+```{r, eval = FALSE}
 p2 <- ggplot(daily_p,aes(x=date,y=mean_temp,color=station,group=station)) + 
   geom_line() + 
   geom_point() +
-  labs(title = '100 mile temp diff', x='Date',y= 'Mean Temp (f)') + 
+  labs(title = '100 mile temp diff', x='Date',y= 'Mean Temp (f)')+
   transition_reveal(date) + 
   scale_color_few()
 
-
 animate(p2, nframes=nrow(daily_p))
-
-
-
 ```
 
 
 ## Static background plot
 
-
-```{r}
+```{r, include = FALSE}
 usa <- us_states()
 
 co <- usa %>%
@@ -142,14 +140,8 @@ tm_shape(co) +
 
 ```
 
-
-
 ## Quick plot
-
-```{r}
-
-
-  
+```{r, include = FALSE}
 basemap <- tm_shape(co) + 
     tm_polygons() + 
   tm_shape(co_elev) +
@@ -159,13 +151,14 @@ basemap <- tm_shape(co) +
 ```
 
 
-
 ```{r,eval=F}
  
 full_dates <- unique(sf_p$date)
 
-sequence <- 1:length(full_dates)
-saveVideo({
+sequence <- 1:10
+  # 
+  # length(full_dates)
+saveGIF({
   for(i in sequence){
   sub_sf <- sf_p %>%
     filter(date == full_dates[i]) %>%
@@ -187,7 +180,7 @@ saveVideo({
                         col=c('red','white'),
                         title='Station'))
   }
-},movie.name = 'precip_flash.mp4',
+},movie.name = 'precip_flash.gif',
   interval=0.05,
   ani.width=1000,
   ani.height=800)
@@ -225,28 +218,24 @@ save(daily_p,file='DailyP.RData')
 This code is almost identical to the above, but it uses all ASOS/AWOS precip
 stations
 
-
 ```{r, eval=F}
 load('DailyP.RData')
 
 daily_sf <- daily_p %>%
   st_as_sf(.,coords=c('lon','lat'),crs=4326,remove=F)
 
-
-
-
 full_dates <- unique(daily_sf$date)
 
-sequence <- 1:length(full_dates)
+sequence <- 1:10
+  # length(full_dates)
 saveVideo({
   for(i in sequence){
   sub_sf <- daily_sf %>%
     filter(date == full_dates[i]) %>%
     filter(daily_p > 0)
-  
 
   if(nrow(sub_sf) > 0){
-  finalmap <- basemap + tm_shape(sub_sf) + 
+  finalmap <- basemap + tm_shape(sub_sf) +
     tm_dots(title.size='Daily Precip (in)',
             col='lon',
             size='daily_p',
@@ -257,7 +246,7 @@ saveVideo({
             scale=3.5,
             sizes.legend=c(0,1,5,10,20))
   }else{finalmap <- basemap}
-  print(finalmap + 
+  print(finalmap +
           tm_layout(title=full_dates[i],
         legend.position=c(0.7,0.2)))
   }
@@ -265,11 +254,7 @@ saveVideo({
   interval=0.12,
   ani.width=1000,
   ani.height=800)
-
-
-
 ```
-
 
 
 # In Class work.
@@ -279,11 +264,28 @@ saveVideo({
 Make a video showing the correlation between Air Force Academy and Fort Collins
 between the min, mean, and max temps. The movie should cover the full year. 
 
-```{r}
+```{r, warning = FALSE}
+daily_p_type<-daily_p%>%
+  group_by(station)%>%
+  gather(key=type, value= value, mean_temp:max_temp)%>%
+  select(-lon, -lat, -daily_p)%>%
+  group_by(date, type)%>%
+  spread(station, value)
+  
+slice_p_type <- daily_p_type %>%
+  arrange(date) %>%
+  slice(1:20)
+
+p4<-ggplot(daily_p_type,aes(x=FNL,y=AFF,color=type)) + 
+  geom_point() +
+  geom_line()+
+  labs(title = 'Min, Max, Mean Temp Compare', x='Temp FNL (f)',y= 'Temp AFF (f)')+
+  transition_reveal(date) + 
+  scale_color_few()
+
+animate(p4, nframes=nrow(daily_p_type))
 
 ```
-
-
 
 ## (Animation package)
 
@@ -293,7 +295,81 @@ Make a video of mean temperature differences for the full Colorado dataset
 The video should look similar to the one above, but I want you to choose your own 
 style (change the background, add other layers (like counties or cities)), etc...
 
+### Load data and create basemap
 ```{r}
 load('DailyP.RData')
+
+co_cities <- us_cities(states = "CO")
+
+sf_p <- daily_p %>%
+  st_as_sf(coords=c('lon','lat'),crs=4326)
+
+tm_shape(co) + 
+   tm_polygons() + 
+   tm_shape(co_elev) +
+   tm_raster(style = 'cont',
+             palette = 'YlOrRd',
+             title = 'Elevation (m)')+    
+  tm_shape(co_cities) +
+   tm_dots(size = 'population')+
+   # tm_shape(sf_p) + 
+   # tm_dots(col='station',size=3,palette=c('red','white'))+
+ tm_layout(scale = 1, 
+ 	legend.position = c("left","bottom"),
+     legend.bg.color = "white", legend.bg.alpha = .7, 
+     legend.frame = "gray50")
+ 
+basemap <- tm_shape(co) +
+   tm_polygons() +
+   tm_shape(co_elev) +
+   tm_raster(style = 'cont',
+             palette = 'YlOrRd',
+             title = 'Elevation (m)') +
+   tm_layout(legend.position = c("left", "bottom"),
+             bg.color = "lightblue") +
+   tm_shape(co_cities) +
+   tm_dots(size = 'population')+
+   tm_layout(scale = 1, 
+	legend.position = c("left","bottom"),
+     legend.bg.color = "white", legend.bg.alpha = .7, 
+     legend.frame = "gray50")
+
+```
+
+### Make video
+```{r}
+daily_sf <- daily_p %>%
+  st_as_sf(.,coords=c('lon','lat'),crs=4326,remove=F)
+
+full_dates <- unique(sf_p$date)
+
+sequence <- 1:10
+  # length(full_dates)
+saveGIF({
+  for(i in sequence){
+  sub_sf <- daily_sf %>%
+    filter(date == full_dates[i]) %>%
+    filter(daily_p > 0)
+
+  if(nrow(sub_sf) > 0){
+  finalmap <- basemap + tm_shape(sub_sf) + 
+    tm_dots(title.size='Daily Precip (in)',
+            col='lon',
+            size='daily_p',
+            style='cont',
+            palette='Dark2',
+            legend.show = F,
+            size.max=10,
+            scale=3.5,
+            sizes.legend=c(0,1,5,10,20))
+  }else{finalmap <- basemap}
+  print(finalmap + 
+          tm_layout(title=full_dates[i],
+        legend.position=c(0.7,0.2)))
+  }
+},movie.name = 'precip_flash_all_2.gif',
+  interval=0.12,
+  ani.width=1000,
+  ani.height=800)
 ```
 
